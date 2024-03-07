@@ -181,7 +181,7 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.3
-  far clip plane: 1000
+  far clip plane: 1000000
   field of view: 60
   orthographic: 0
   orthographic size: 5
@@ -247,9 +247,11 @@ MonoBehaviour:
   MainCamera: {fileID: 1451463549}
   Prefab: {fileID: 7728330326336597667}
   FrustumCullComputeShader: {fileID: 7200000, guid: a5c4d52a214174b4aa42939bfed8aceb, type: 3}
-  InstanceCounts: 1000000
+  InstanceCounts: 10000
   InstanceExtents: {x: 500, y: 500, z: 500}
   RandomMaxScaleValue: 5
+  showInstanceGPUBounds_GetData: 1
+  showInstanceGPUBounds_Async: 0
 --- !u!4 &1591727747
 Transform:
   m_ObjectHideFlags: 0
@@ -381,15 +383,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8524842199920305466, guid: baed4728dd2923c4ebc24bbd4bbc8450, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 4.4040713
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8524842199920305466, guid: baed4728dd2923c4ebc24bbd4bbc8450, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 1.7347486
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8524842199920305466, guid: baed4728dd2923c4ebc24bbd4bbc8450, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -2.055712
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8524842199920305466, guid: baed4728dd2923c4ebc24bbd4bbc8450, type: 3}
       propertyPath: m_LocalRotation.w
