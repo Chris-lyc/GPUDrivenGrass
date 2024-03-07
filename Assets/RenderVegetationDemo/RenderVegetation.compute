@@ -12,6 +12,14 @@ float3 boxExtents;
 // like List in C#, use for storing the result of visible after frustum culling
 AppendStructuredBuffer<float4x4> visibleBuffer;
 
+bool showInstanceBounds;
+struct GPUBounds {
+	float3 min;
+	float3 max;
+};
+AppendStructuredBuffer<GPUBounds> GPUBoundsBuffer;
+
+
 
 // frustum culling is to judge if the bbox of instance is intersected with frustum of camera
 bool IsOutsidePlane(float4 plane, float3 pointPos) {
@@ -37,7 +45,7 @@ bool IsCulled(in float4 boundVerts[8]) {
 // so, the number of group in a dispatch should be (instancesCount / 64, 1, 1)
 [numthreads(64,1,1)]
 void FrustumCulling(uint3 id : SV_DispatchThreadID) {
-	if (id.x >= instancesCount) return;
+	if (id.x >= (uint)instancesCount) return;
 	float4x4 instance = instancesBuffer[id.x];
 
 	float3 boundMin = boxCenter - boxExtents;
@@ -58,6 +66,27 @@ void FrustumCulling(uint3 id : SV_DispatchThreadID) {
 
 	if (!IsCulled(boundVerts)) {
 		visibleBuffer.Append(instance);
+
+		if (showInstanceBounds) {
+			GPUBounds gbox;
+			float x = boundVerts[0].x; float xx = x;
+			float y = boundVerts[0].y; float yy = y;
+			float z = boundVerts[0].z; float zz = z;
+				
+			for (int i = 0; i < 8; i++) {
+				x = min(x, boundVerts[i].x);
+				y = min(y, boundVerts[i].y);
+				z = min(z, boundVerts[i].z);
+				xx = max(xx, boundVerts[i].x);
+				yy = max(yy, boundVerts[i].y);
+				zz = max(zz, boundVerts[i].z);
+			}
+			gbox.min = float3(x, y, z);
+			gbox.max = float3(xx, yy, zz);
+			//gbox.min = boundVerts[0];
+			//gbox.max = boundVerts[7];
+			GPUBoundsBuffer.Append(gbox);
+		}
 	}
 
 }

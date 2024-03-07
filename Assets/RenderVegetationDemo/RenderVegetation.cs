@@ -2,6 +2,13 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+
+public struct GPUBounds
+{
+    public Vector3 min;
+    public Vector3 max;
+};
+
 public class RenderVegetation : MonoBehaviour
 {
     // camera
@@ -34,7 +41,19 @@ public class RenderVegetation : MonoBehaviour
     public Vector3Int InstanceExtents = new Vector3Int(500, 500, 500);
     public float RandomMaxScaleValue = 5;
     private Matrix4x4[] InstancesMatrix;
-    
+
+
+    //use for debug
+    private ComputeBuffer InstanceGPUBoundsBuffer; // use for bounding gpu buffer
+    private ComputeBuffer InstanceGPUBoundsCount;
+
+    private uint[] InstanceGPUBoundsCountArray = new uint[1] { 0 }; // use for store the data in cpu
+    private GPUBounds[] InstanceGPUBounds;
+
+    [Header("Debug : show Instance GPUBounds by GetData")]
+    public bool showInstanceGPUBounds_GetData;
+    [Header("Debug : show Instance GPUBounds by Async")]
+    public bool showInstanceGPUBounds_Async;
     
     // Start is called before the first frame update
     void Start()
@@ -75,6 +94,14 @@ public class RenderVegetation : MonoBehaviour
 
         DrawIndirectInstanceMPB = new MaterialPropertyBlock();
         DrawIndirectInstanceMPB.SetBuffer("IndirectShaderDataBuffer", OutputVisibleInstancesBuffer);
+
+        // use for debug
+        InstanceGPUBoundsBuffer = new ComputeBuffer(InstanceCounts, sizeof(float)* 3 * 2, ComputeBufferType.Append);
+        InstanceGPUBoundsCount = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.IndirectArguments);
+        InstanceGPUBoundsCount.SetData(InstanceGPUBoundsCountArray);
+        FrustumCullComputeShader.SetBuffer(FrustumCullingKernelID, "GPUBoundsBuffer", InstanceGPUBoundsBuffer);
+
+        InstanceGPUBounds = new GPUBounds[InstanceCounts];
     }
 
 
@@ -84,12 +111,30 @@ public class RenderVegetation : MonoBehaviour
         if (IsRenderCameraChange())
         {
             //clear
+            InstanceGPUBoundsBuffer.SetCounterValue(0);
             OutputVisibleInstancesBuffer.SetCounterValue(0);
             FrustumCullComputeShader.SetVectorArray("cameraPlanes", GetFrustumPlanes(MainCamera, CameraFrustumPlanes));
+            FrustumCullComputeShader.SetBool("showInstanceBounds", showInstanceGPUBounds_Async || showInstanceGPUBounds_GetData);
             //note that the FrustumCullingKernelID's numthreads is(64,1,1)
             //here we declare 1D number Dispatch, the group's number should be [InstancesCount /64] + 1
             FrustumCullComputeShader.Dispatch(FrustumCullingKernelID, (InstanceCounts / 64) + 1 , 1, 1);
             ComputeBuffer.CopyCount(OutputVisibleInstancesBuffer, DrawIndirectInstanceArgsBuffer, sizeof(uint));
+
+            if (showInstanceGPUBounds_GetData)
+            {
+
+                //// first copy count to a buffer
+                ComputeBuffer.CopyCount(InstanceGPUBoundsBuffer, InstanceGPUBoundsCount, 0);
+                //// than use the getdata method to get count , and store in cpu
+                InstanceGPUBoundsCount.GetData(InstanceGPUBoundsCountArray);
+                uint cnt = InstanceGPUBoundsCountArray[0];
+                if (InstanceGPUBounds == null || InstanceGPUBounds.Length != cnt)
+                {
+                    InstanceGPUBounds = new GPUBounds[cnt];
+                }
+                //// get data method is synchronized, so it would be slow
+                InstanceGPUBoundsBuffer.GetData(InstanceGPUBounds);
+            }
         }
         Graphics.DrawMeshInstancedIndirect(
             PrefabMesh,
@@ -102,6 +147,18 @@ public class RenderVegetation : MonoBehaviour
             );
 
     }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        for(int i = 0; InstanceGPUBounds != null && i < InstanceGPUBoundsCountArray[0]; i++)
+        {
+            if (i >= InstanceGPUBounds.Length) break;
+            var ggbox = InstanceGPUBounds[i];
+            Gizmos.DrawWireCube((ggbox.max + ggbox.min) / 2f, ggbox.max - ggbox.min);
+        }
+    }
+
 
     private Matrix4x4[] RandomGenerateInstances(int instanceCount, Vector3Int instanceExtents, float maxScale)
     {
@@ -186,6 +243,8 @@ public class RenderVegetation : MonoBehaviour
         DrawIndirectInstanceArgsBuffer.Release();
         InputInstancesBuffer.Release();
         OutputVisibleInstancesBuffer.Release();
+        InstanceGPUBoundsBuffer.Release();
+        InstanceGPUBoundsCount.Release();
     }
 
 }
