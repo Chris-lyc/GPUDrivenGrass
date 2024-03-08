@@ -183,9 +183,9 @@ public class RenderVegetation : MonoBehaviour
 
     private void OnDestroy()
     {
-        DrawIndirectInstanceArgsBuffer.Release();
-        InputInstancesBuffer.Release();
-        OutputVisibleInstancesBuffer.Release();
+        DrawIndirectInstanceArgsBuffer?.Release();
+        InputInstancesBuffer?.Release();
+        OutputVisibleInstancesBuffer?.Release();
     }
 
 }
