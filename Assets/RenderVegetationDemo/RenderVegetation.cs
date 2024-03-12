@@ -240,9 +240,8 @@ public class RenderVegetation : MonoBehaviour
 
     private void OnDestroy()
     {
-       
-        InstanceGPUBoundsBuffer.Release();
-        InstanceGPUBoundsCount.Release();
+        InstanceGPUBoundsBuffer?.Release();
+        InstanceGPUBoundsCount?.Release();
     }
 
 }

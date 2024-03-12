@@ -16,7 +16,7 @@ Shader "Custom/RenderVegetation"
         // Physically based Standard lighting model, and enable shadows on all light types
         #pragma surface surf Standard fullforwardshadows
         #pragma multi_compile_instancing
-        #include "Assets\RenderVegetationDemo\GPUInstanceIndirect.cginc"
+        #include "Assets\Shaders\GPUInstanceIndirect.cginc"
         #pragma instancing_options procedural:setup
         // Use shader model 3.0 target, to get nicer looking lighting
         #pragma target 3.0
