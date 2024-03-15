@@ -17,6 +17,7 @@
 
             #include "UnityCG.cginc"
             #include "UnityInstancing.cginc"
+            
             #pragma multi_compile_instancing
             #include "Assets\Shaders\GPUInstanceIndirect.cginc"
             #pragma instancing_options procedural:setup
@@ -54,4 +55,5 @@
             ENDHLSL
         }
     }
+    FallBack "Diffuse"
 }
