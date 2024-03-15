@@ -4,12 +4,9 @@ using UnityEngine;
 
 public class DepthTextureDemo : MonoBehaviour
 {
-
-    public RenderTexture m_depthTexture;//depth texture with mip map
-    public RenderTexture DepthTexture => m_depthTexture;
-
+    // depth texture size, 
     private int m_depthTextureSize = 0;
-    public int DepthTextureSize
+    private int DepthTextureSize
     {
         get
         {
@@ -18,16 +15,18 @@ public class DepthTextureDemo : MonoBehaviour
             return m_depthTextureSize;
         }
     }
+    public RenderTexture DepthTexture;//depth texture with mip map
+    const RenderTextureFormat DepthTextureFormat = RenderTextureFormat.RHalf;//depth value domain: 0-1,single channel
 
-
-    const RenderTextureFormat m_depthTextureFormat = RenderTextureFormat.RHalf;//depth value domain: 0-1,single channel
-
-
-
-
+    // this shader's input is a texture, target is a texture too
+    // Graphics.Blit(preRenderTexture, currentRenderTexture, DepthTextureMaterial);
+    // so the vert input 
     public Shader DepthTextureShader;//the shader to generate mipmap
+
     private Material DepthTextureMaterial;
     private int CameraDepthTextureShaderID;
+
+
     // Start is called before the first frame update
     void Start()
     {
@@ -40,12 +39,12 @@ public class DepthTextureDemo : MonoBehaviour
 
     private void InitDepthTexture()
     {
-        if (m_depthTexture != null) return;
-        m_depthTexture = new RenderTexture(DepthTextureSize, DepthTextureSize, 0, m_depthTextureFormat);
-        m_depthTexture.autoGenerateMips = false;
-        m_depthTexture.useMipMap = true;
-        m_depthTexture.filterMode = FilterMode.Point;
-        m_depthTexture.Create();
+        if (DepthTexture != null) return;
+        DepthTexture = new RenderTexture(DepthTextureSize, DepthTextureSize, 0, DepthTextureFormat);
+        DepthTexture.autoGenerateMips = false;
+        DepthTexture.useMipMap = true;
+        DepthTexture.filterMode = FilterMode.Point;
+        DepthTexture.Create();
     }
 #if UNITY_EDITOR
     void Update()
@@ -54,7 +53,7 @@ public class DepthTextureDemo : MonoBehaviour
         void OnPostRender()
     {
 #endif
-        int w = m_depthTexture.width;
+        int w = DepthTexture.width;
         int mipmapLevel = 0;
 
         RenderTexture currentRenderTexture = null;//cur mipmapLevel's mipmap
@@ -63,7 +62,7 @@ public class DepthTextureDemo : MonoBehaviour
         //if mipmap'width > 8, calculate the next level mipmap
         while (w > 8)
         {
-            currentRenderTexture = RenderTexture.GetTemporary(w, w, 0, m_depthTextureFormat);
+            currentRenderTexture = RenderTexture.GetTemporary(w, w, 0, DepthTextureFormat);
             currentRenderTexture.filterMode = FilterMode.Point;
             if (preRenderTexture == null)
             {
@@ -76,7 +75,7 @@ public class DepthTextureDemo : MonoBehaviour
                 Graphics.Blit(preRenderTexture, currentRenderTexture, DepthTextureMaterial);
                 RenderTexture.ReleaseTemporary(preRenderTexture);
             }
-            Graphics.CopyTexture(currentRenderTexture, 0, 0, m_depthTexture, 0, mipmapLevel);
+            Graphics.CopyTexture(currentRenderTexture, 0, 0, DepthTexture, 0, mipmapLevel);
             preRenderTexture = currentRenderTexture;
 
             w /= 2;

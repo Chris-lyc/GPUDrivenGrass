@@ -15,6 +15,7 @@ Shader "Unlit/DepthTextureShader"
                 #pragma fragment frag
 
                 sampler2D _MainTex;
+                //_MainTex_TexelSize = (1.0/width,1.0/height,width,height) of _MainTex
                 float4 _MainTex_TexelSize;
 
                 struct appdata
@@ -36,11 +37,11 @@ Shader "Unlit/DepthTextureShader"
                     depth.y = tex2D(_MainTex, uv + float2(0, offset));
                     depth.z = tex2D(_MainTex, uv + float2(offset, 0));
                     depth.w = tex2D(_MainTex, uv + float2(offset, offset));
-    #if defined(UNITY_REVERSED_Z)
+                #if defined(UNITY_REVERSED_Z)
                     return min(min(depth.x, depth.y), min(depth.z, depth.w));
-    #else
+                #else
                     return max(max(depth.x, depth.y), max(depth.z, depth.w));
-    #endif
+                #endif
                 }
                 v2f vert(appdata v)
                 {
@@ -52,7 +53,7 @@ Shader "Unlit/DepthTextureShader"
                 float4 frag(v2f input) : Color
                 {
                     float depth = CalculatorMipmapDepth(input.uv);
-                    return float4(depth*256, 0, 0, 1.0f);
+                    return float4(depth, 0, 0, 1.0f);
                 }
                 ENDCG
             }
