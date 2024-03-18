@@ -75,7 +75,7 @@ public class RenderVegetation : MonoBehaviour
             return m_depthTextureSize;
         }
     }
-    private RenderTexture DepthTexture;//depth texture with mip map
+    public RenderTexture DepthTexture;//depth texture with mip map
     const RenderTextureFormat DepthTextureFormat = RenderTextureFormat.RHalf;//depth value domain: 0-1,single channel
 
     // this shader's input is a texture, target is a texture too
