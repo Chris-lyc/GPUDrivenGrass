@@ -5,12 +5,20 @@ StructuredBuffer<float4x4> instancesBuffer;
 int instancesCount;
 // plane use float4 to define, as  (A,B,C,D) , Ax + By + Cz + D = 0
 float4 cameraPlanes[6];
+float4x4 cameraVPMatrix;
 
 float3 boxCenter;
 float3 boxExtents;
 
 // like List in C#, use for storing the result of visible after frustum culling
 AppendStructuredBuffer<float4x4> visibleBuffer;
+
+
+// hiz texture
+Texture2D depthMipmapTex;
+uint depthTextureSize;
+bool isOpenGL;
+
 
 bool showInstanceBounds;
 struct GPUBounds {
@@ -27,7 +35,7 @@ bool IsOutsidePlane(float4 plane, float3 pointPos) {
 	return dot(plane.xyz, pointPos) + plane.w > 0;
 }
 
-bool IsCulled(in float4 boundVerts[8]) {
+bool IsFrustumCulled(in float4 boundVerts[8]) {
 	for (int i = 0; i < 6; i++) {
 		for (int j = 0; j < 8; j++) {
 			if (!IsOutsidePlane(cameraPlanes[i], boundVerts[j].xyz)) break;
@@ -36,6 +44,100 @@ bool IsCulled(in float4 boundVerts[8]) {
 		}
 	}
 	return false;
+}
+
+bool IsHiZCulled(in float4 bv[8]) {
+	return false;
+	// ndc space's new bbox
+	float minx = 1; float maxx = -1;
+	float miny = 1; float maxy = -1;
+	float minz = 1; float maxz = -1;
+
+	float4 boundVerts[8] = {bv[0],bv[1], bv[2], bv[3], bv[4], bv[5], bv[6], bv[7]};
+
+	for (int i = 0; i < 8; i++) {
+		// verts in ndc space
+		boundVerts[i] = mul(cameraVPMatrix, boundVerts[i]);
+		boundVerts[i] = boundVerts[i] / boundVerts[i].w;
+
+		minx = min(minx, boundVerts[i].x); maxx = max(maxx, boundVerts[i].x);
+		miny = min(miny, boundVerts[i].y); maxy = max(maxy, boundVerts[i].y);
+		minz = min(minz, boundVerts[i].z); maxz = max(maxz, boundVerts[i].z);
+	}
+
+	// transform the ndc [x,y]<->[-1,1] to [u,v]<->[0,1]
+	float2 uvLeftBottom = float2(minx, miny) * 0.5f + 0.5f;
+	float2 uvUpRight = float2(maxx, maxy) * 0.5f + 0.5f;
+	// if the platform is DX11, the z would be reverse to [0,1], so we take the maxz
+	float depth = maxz;
+
+	// if the platform is OpenGL, the z would be in [-1,1],so we need to transfer it to [0,1]
+	if (isOpenGL) {
+		depth = minz;
+		depth = depth * 0.5f + 0.5f;
+	}
+
+	// mipmap level
+	// ndc [x,y]<->[-1,1] to screen [0,width]x[0,height], actually is (uvLB-uvUP) * curDepthTexSize
+	uint scwidth = max(maxx - minx, maxy - miny) * 0.5f * depthTextureSize;
+	// this is because when we generate the mipmap, the last level's size is > 8,so minus 4
+	uint mmlevel = (uint)clamp(log2(scwidth), 0, log2(depthTextureSize)-4);
+	uint curDepthTexSize = depthTextureSize / (1 << mmlevel);
+
+
+	// calculate the pixel coord
+	uint lbx = clamp(uvLeftBottom.x * curDepthTexSize, 0, curDepthTexSize - 1);
+	uint lby = clamp(uvLeftBottom.y * curDepthTexSize, 0, curDepthTexSize - 1);
+
+	uint urx = clamp(uvUpRight.x * curDepthTexSize, 0, curDepthTexSize - 1);
+	uint ury = clamp(uvUpRight.y * curDepthTexSize, 0, curDepthTexSize - 1);
+
+	/*for (int i = lbx; i <= urx; i++) {
+		for (int j = lby; j <= ury; j++) {
+			float depthInTex = depthMipmapTex.mips[mmlevel][uint2(i,j)].r;
+			if (isOpenGL) {
+				if (depth > depthInTex) {
+					return false;
+				}
+			}
+			else {
+				if (depth < depthInTex) {
+					return false;
+				}
+			}
+		}
+	}
+
+	return true;*/
+
+	uint2 pixelLeftBottom = uint2(lbx, lby);
+	uint2 pixelUpRight = uint2(urx, ury);
+	uint2 pixelUpLeft = uint2(lbx, ury);
+	uint2 pixelBottomRight = uint2(urx, lby);
+
+	float depthQuad[4];
+	depthQuad[0] = depthMipmapTex.mips[mmlevel][pixelLeftBottom].r;
+	depthQuad[1] = depthMipmapTex.mips[mmlevel][pixelUpRight].r;
+	depthQuad[2] = depthMipmapTex.mips[mmlevel][pixelUpLeft].r;
+	depthQuad[3] = depthMipmapTex.mips[mmlevel][pixelBottomRight].r;
+
+	// in opengl, more far more less, so if greater, don't cull
+	if (isOpenGL) {
+		for (int i = 0; i < 4; i++) {
+			if (depth > depthQuad[i]) {
+				return false;
+			}
+		}
+	}
+	else { // in dx11, more far more greater, so if less, don't cull
+		for (int i = 0; i < 4; i++) {
+			if (depth < depthQuad[i]) {
+				return false;
+			}
+		}
+	}
+
+	return true;
 }
 
 
@@ -51,6 +153,7 @@ void FrustumCulling(uint3 id : SV_DispatchThreadID) {
 	float3 boundMin = boxCenter - boxExtents;
 	float3 boundMax = boxCenter + boxExtents;
 
+	// verts in world space
 	float4 boundVerts[8];
 	boundVerts[0] = mul(instance, float4(boundMin.x, boundMin.y, boundMin.z, 1));
 	boundVerts[1] = mul(instance, float4(boundMin.x, boundMin.y, boundMax.z, 1));
@@ -64,7 +167,7 @@ void FrustumCulling(uint3 id : SV_DispatchThreadID) {
 	boundVerts[6] = mul(instance, float4(boundMax.x, boundMax.y, boundMin.z, 1));
 	boundVerts[7] = mul(instance, float4(boundMax.x, boundMax.y, boundMax.z, 1));
 
-	if (!IsCulled(boundVerts)) {
+	if (!IsFrustumCulled(boundVerts) && !IsHiZCulled(boundVerts)) {
 		visibleBuffer.Append(instance);
 
 		if (showInstanceBounds) {

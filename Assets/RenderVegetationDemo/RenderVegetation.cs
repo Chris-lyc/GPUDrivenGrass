@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 
 public struct GPUBounds
@@ -11,6 +12,8 @@ public struct GPUBounds
 
 public class RenderVegetation : MonoBehaviour
 {
+
+    #region FrustumCulling
     // camera
     public Camera MainCamera;
     private Vector4[] CameraFrustumPlanes;
@@ -24,10 +27,10 @@ public class RenderVegetation : MonoBehaviour
     private Bounds PrefabMeshBounds; //use for the prefab's mesh, as the boundCenter and boundExtents to be transfered  
 
     //compute shader
-    public ComputeShader FrustumCullComputeShader;
+    public ComputeShader FrustumHiZCullComputeShader;
     private ComputeBuffer InputInstancesBuffer;
     private ComputeBuffer OutputVisibleInstancesBuffer;
-    private int FrustumCullingKernelID;
+    private int FrustumHiZCullingKernelID;
 
     //drawindirectinstance
     private ComputeBuffer DrawIndirectInstanceArgsBuffer;
@@ -50,11 +53,53 @@ public class RenderVegetation : MonoBehaviour
     private uint[] InstanceGPUBoundsCountArray = new uint[1] { 0 }; // use for store the data in cpu
     private GPUBounds[] InstanceGPUBounds;
 
+    public Shader DepthTextureDebugShader;
+
     [Header("Debug : show Instance GPUBounds by GetData")]
     public bool showInstanceGPUBounds_GetData;
     [Header("Debug : show Instance GPUBounds by Async")]
     public bool showInstanceGPUBounds_Async;
-    
+
+    #endregion FrustumCulling
+
+
+    #region HiZCulling
+    // depth texture size, 
+    private int m_depthTextureSize = 0;
+    private int DepthTextureSize
+    {
+        get
+        {
+            if (m_depthTextureSize == 0)
+                m_depthTextureSize = Mathf.NextPowerOfTwo(Mathf.Max(Screen.width, Screen.height));
+            return m_depthTextureSize;
+        }
+    }
+    private RenderTexture DepthTexture;//depth texture with mip map
+    const RenderTextureFormat DepthTextureFormat = RenderTextureFormat.RHalf;//depth value domain: 0-1,single channel
+
+    // this shader's input is a texture, target is a texture too
+    // Graphics.Blit(preRenderTexture, currentRenderTexture, DepthTextureMaterial);
+    // so the vert input 
+    public Shader DepthTextureShader;//the shader to generate mipmap
+
+    private Material DepthTextureMaterial;
+    private int CameraDepthTextureShaderID;
+
+    private bool IsDepthTextureInited = false;
+    #endregion
+
+    private void OnEnable()
+    {
+        RenderPipelineManager.beginCameraRendering += GenerateDepthMipMap;
+    }
+
+    private void OnDisable()
+    {
+        RenderPipelineManager.beginCameraRendering -= GenerateDepthMipMap;
+    }
+
+
     // Start is called before the first frame update
     void Start()
     {
@@ -73,13 +118,15 @@ public class RenderVegetation : MonoBehaviour
         OutputVisibleInstancesBuffer = new ComputeBuffer(InstanceCounts, sizeof(float) * 4 * 4, ComputeBufferType.Append);
 
         //init computeshader
-        FrustumCullingKernelID = FrustumCullComputeShader.FindKernel("FrustumCulling");
-        FrustumCullComputeShader.SetBuffer(FrustumCullingKernelID, "instancesBuffer", InputInstancesBuffer);
-        FrustumCullComputeShader.SetInt("instancesCount", InstanceCounts);
-        FrustumCullComputeShader.SetVector("boxCenter", PrefabMeshBounds.center);
-        FrustumCullComputeShader.SetVector("boxExtents", PrefabMeshBounds.extents);
-        FrustumCullComputeShader.SetBuffer(FrustumCullingKernelID, "visibleBuffer", OutputVisibleInstancesBuffer);
-
+        FrustumHiZCullingKernelID = FrustumHiZCullComputeShader.FindKernel("FrustumCulling");
+        FrustumHiZCullComputeShader.SetBuffer(FrustumHiZCullingKernelID, "instancesBuffer", InputInstancesBuffer);
+        FrustumHiZCullComputeShader.SetInt("instancesCount", InstanceCounts);
+        FrustumHiZCullComputeShader.SetInt("depthTextureSize", DepthTextureSize);
+        FrustumHiZCullComputeShader.SetVector("boxCenter", PrefabMeshBounds.center);
+        FrustumHiZCullComputeShader.SetVector("boxExtents", PrefabMeshBounds.extents);
+        FrustumHiZCullComputeShader.SetBuffer(FrustumHiZCullingKernelID, "visibleBuffer", OutputVisibleInstancesBuffer);
+        FrustumHiZCullComputeShader.SetBool("isOpenGL", Camera.main.projectionMatrix.Equals(GL.GetGPUProjectionMatrix(Camera.main.projectionMatrix, false)));
+        
         //draw indirect instances
         DrawIndirectInstanceBounds.size = Vector3.one * 100000;
 
@@ -99,25 +146,38 @@ public class RenderVegetation : MonoBehaviour
         InstanceGPUBoundsBuffer = new ComputeBuffer(InstanceCounts, sizeof(float)* 3 * 2, ComputeBufferType.Append);
         InstanceGPUBoundsCount = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.IndirectArguments);
         InstanceGPUBoundsCount.SetData(InstanceGPUBoundsCountArray);
-        FrustumCullComputeShader.SetBuffer(FrustumCullingKernelID, "GPUBoundsBuffer", InstanceGPUBoundsBuffer);
+        FrustumHiZCullComputeShader.SetBuffer(FrustumHiZCullingKernelID, "GPUBoundsBuffer", InstanceGPUBoundsBuffer);
 
         InstanceGPUBounds = new GPUBounds[InstanceCounts];
+
+        // use for depth texture
+        MainCamera.depthTextureMode |= DepthTextureMode.Depth;
+        DepthTextureMaterial = new Material(DepthTextureShader);
+        CameraDepthTextureShaderID = Shader.PropertyToID("_CameraDepthTexture");
+
+        InitDepthTexture();
     }
 
 
     // Update is called once per frame
     void Update()
     {
-        if (IsRenderCameraChange())
+        Shader.SetGlobalTexture("DepthTextureDebug", DepthTexture);
+        if (IsDepthTextureInited && IsRenderCameraChange() )
         {
+
             //clear
             InstanceGPUBoundsBuffer.SetCounterValue(0);
             OutputVisibleInstancesBuffer.SetCounterValue(0);
-            FrustumCullComputeShader.SetVectorArray("cameraPlanes", GetFrustumPlanes(MainCamera, CameraFrustumPlanes));
-            FrustumCullComputeShader.SetBool("showInstanceBounds", showInstanceGPUBounds_Async || showInstanceGPUBounds_GetData);
-            //note that the FrustumCullingKernelID's numthreads is(64,1,1)
+            FrustumHiZCullComputeShader.SetVectorArray("cameraPlanes", GetFrustumPlanes(MainCamera, CameraFrustumPlanes));
+            FrustumHiZCullComputeShader.SetBool("showInstanceBounds", showInstanceGPUBounds_Async || showInstanceGPUBounds_GetData);
+            
+            FrustumHiZCullComputeShader.SetTexture(FrustumHiZCullingKernelID, "depthMipmapTex", DepthTexture);
+            FrustumHiZCullComputeShader.SetMatrix("cameraVPMatrix", GL.GetGPUProjectionMatrix(MainCamera.projectionMatrix, false) * MainCamera.worldToCameraMatrix);
+
+            //note that the FrustumHiZCullingKernelID's numthreads is(64,1,1)
             //here we declare 1D number Dispatch, the group's number should be [InstancesCount /64] + 1
-            FrustumCullComputeShader.Dispatch(FrustumCullingKernelID, (InstanceCounts / 64) + 1 , 1, 1);
+            FrustumHiZCullComputeShader.Dispatch(FrustumHiZCullingKernelID, (InstanceCounts / 64) + 1 , 1, 1);
             ComputeBuffer.CopyCount(OutputVisibleInstancesBuffer, DrawIndirectInstanceArgsBuffer, sizeof(uint));
 
             if (showInstanceGPUBounds_GetData)
@@ -147,6 +207,51 @@ public class RenderVegetation : MonoBehaviour
             );
 
     }
+
+    private void InitDepthTexture()
+    {
+        if (DepthTexture != null) return;
+        DepthTexture = new RenderTexture(DepthTextureSize, DepthTextureSize, 0, DepthTextureFormat);
+        DepthTexture.autoGenerateMips = false;
+        DepthTexture.useMipMap = true;
+        DepthTexture.filterMode = FilterMode.Point;
+        DepthTexture.Create();
+    }
+
+    private void GenerateDepthMipMap(ScriptableRenderContext context, Camera camera)
+    {
+        IsDepthTextureInited = true;
+        int w = DepthTexture.width;
+        int mipmapLevel = 0;
+
+        RenderTexture currentRenderTexture = null;//cur mipmapLevel's mipmap
+        RenderTexture preRenderTexture = null;//mipmapLevel-1's mipmap
+
+        //if mipmap'width > 8, calculate the next level mipmap
+        while (w > 8)
+        {
+            currentRenderTexture = RenderTexture.GetTemporary(w, w, 0, DepthTextureFormat);
+            currentRenderTexture.filterMode = FilterMode.Point;
+            if (preRenderTexture == null)
+            {
+                //Mipmap[0],that is copy the original depth texture
+                Graphics.Blit(Shader.GetGlobalTexture(CameraDepthTextureShaderID), currentRenderTexture);
+            }
+            else
+            {
+                //let Mipmap[i] Blit to Mipmap[i+1]
+                Graphics.Blit(preRenderTexture, currentRenderTexture, DepthTextureMaterial);
+                RenderTexture.ReleaseTemporary(preRenderTexture);
+            }
+            Graphics.CopyTexture(currentRenderTexture, 0, 0, DepthTexture, 0, mipmapLevel);
+            preRenderTexture = currentRenderTexture;
+
+            w /= 2;
+            mipmapLevel++;
+        }
+        RenderTexture.ReleaseTemporary(preRenderTexture);
+    }
+
 
     private void OnDrawGizmos()
     {
@@ -246,6 +351,9 @@ public class RenderVegetation : MonoBehaviour
 
         InstanceGPUBoundsBuffer?.Release();
         InstanceGPUBoundsCount?.Release();
+
+        DepthTexture?.Release();
+        
     }
 
 }

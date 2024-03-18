@@ -83,5 +83,9 @@ public class DepthTextureDemo : MonoBehaviour
         }
         RenderTexture.ReleaseTemporary(preRenderTexture);
     }
-
+    void OnDestroy()
+    {
+        DepthTexture?.Release();
+        Destroy(DepthTexture);
+    }
 }
