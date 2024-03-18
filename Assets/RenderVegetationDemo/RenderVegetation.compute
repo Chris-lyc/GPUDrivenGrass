@@ -10,12 +10,15 @@ float4x4 cameraVPMatrix;
 float3 boxCenter;
 float3 boxExtents;
 
+float3 cameraForward;
+
 // like List in C#, use for storing the result of visible after frustum culling
 AppendStructuredBuffer<float4x4> visibleBuffer;
 
 
 // hiz texture
 Texture2D depthMipmapTex;
+sampler2D DepthTextureDebug;
 uint depthTextureSize;
 bool isOpenGL;
 
@@ -46,35 +49,35 @@ bool IsFrustumCulled(in float4 boundVerts[8]) {
 	return false;
 }
 
-bool IsHiZCulled(in float4 bv[8]) {
-	return false;
+bool IsHiZCulled(in float4 boundVerts[8]) {
+	
 	// ndc space's new bbox
 	float minx = 1; float maxx = -1;
 	float miny = 1; float maxy = -1;
 	float minz = 1; float maxz = -1;
 
-	float4 boundVerts[8] = {bv[0],bv[1], bv[2], bv[3], bv[4], bv[5], bv[6], bv[7]};
-
 	for (int i = 0; i < 8; i++) {
 		// verts in ndc space
-		boundVerts[i] = mul(cameraVPMatrix, boundVerts[i]);
-		boundVerts[i] = boundVerts[i] / boundVerts[i].w;
+		float4 clipPos = mul(cameraVPMatrix, boundVerts[i]);
+		float3 ndcPos = clipPos.xyz / clipPos.w;
 
-		minx = min(minx, boundVerts[i].x); maxx = max(maxx, boundVerts[i].x);
-		miny = min(miny, boundVerts[i].y); maxy = max(maxy, boundVerts[i].y);
-		minz = min(minz, boundVerts[i].z); maxz = max(maxz, boundVerts[i].z);
+		minx = min(minx, ndcPos.x); maxx = max(maxx, ndcPos.x);
+		miny = min(miny, ndcPos.y); maxy = max(maxy, ndcPos.y);
+		minz = min(minz, ndcPos.z); maxz = max(maxz, ndcPos.z);
 	}
 
 	// transform the ndc [x,y]<->[-1,1] to [u,v]<->[0,1]
 	float2 uvLeftBottom = float2(minx, miny) * 0.5f + 0.5f;
 	float2 uvUpRight = float2(maxx, maxy) * 0.5f + 0.5f;
-	// if the platform is DX11, the z would be reverse to [0,1], so we take the maxz
-	float depth = maxz;
+	// we rather let it go, than cull it wrongly
+	// if the platform is DX11, the z would be reverse to [0,1], so we take the maxz, means close to camera
+	float depthObj = maxz;
 
 	// if the platform is OpenGL, the z would be in [-1,1],so we need to transfer it to [0,1]
+	// and take the minz
 	if (isOpenGL) {
-		depth = minz;
-		depth = depth * 0.5f + 0.5f;
+		depthObj = minz;
+		depthObj = depthObj * 0.5f + 0.5f;
 	}
 
 	// mipmap level
@@ -84,62 +87,21 @@ bool IsHiZCulled(in float4 bv[8]) {
 	uint mmlevel = (uint)clamp(log2(scwidth), 0, log2(depthTextureSize)-4);
 	uint curDepthTexSize = depthTextureSize / (1 << mmlevel);
 
+	float depthInMM[4];
+	depthInMM[0] = tex2Dlod(DepthTextureDebug, float4(uvLeftBottom.x, uvLeftBottom.y, 0, mmlevel)).r;
+	depthInMM[1] = tex2Dlod(DepthTextureDebug, float4(uvLeftBottom.x, uvUpRight.y, 0, mmlevel)).r;
+	depthInMM[2] = tex2Dlod(DepthTextureDebug, float4(uvUpRight.x, uvLeftBottom.y, 0, mmlevel)).r;
+	depthInMM[3] = tex2Dlod(DepthTextureDebug, float4(uvUpRight.x, uvUpRight.y, 0, mmlevel)).r;
+	
+	float depthInMMMin = depthInMM[0];
+	for (int i = 0; i < 4; i++) depthInMMMin = min(depthInMMMin, depthInMM[i]);
 
-	// calculate the pixel coord
-	uint lbx = clamp(uvLeftBottom.x * curDepthTexSize, 0, curDepthTexSize - 1);
-	uint lby = clamp(uvLeftBottom.y * curDepthTexSize, 0, curDepthTexSize - 1);
+	if (depthObj < depthInMMMin)
+		return true;
+	
+	return false;
 
-	uint urx = clamp(uvUpRight.x * curDepthTexSize, 0, curDepthTexSize - 1);
-	uint ury = clamp(uvUpRight.y * curDepthTexSize, 0, curDepthTexSize - 1);
-
-	/*for (int i = lbx; i <= urx; i++) {
-		for (int j = lby; j <= ury; j++) {
-			float depthInTex = depthMipmapTex.mips[mmlevel][uint2(i,j)].r;
-			if (isOpenGL) {
-				if (depth > depthInTex) {
-					return false;
-				}
-			}
-			else {
-				if (depth < depthInTex) {
-					return false;
-				}
-			}
-		}
-	}
-
-	return true;*/
-
-	uint2 pixelLeftBottom = uint2(lbx, lby);
-	uint2 pixelUpRight = uint2(urx, ury);
-	uint2 pixelUpLeft = uint2(lbx, ury);
-	uint2 pixelBottomRight = uint2(urx, lby);
-
-	float depthQuad[4];
-	depthQuad[0] = depthMipmapTex.mips[mmlevel][pixelLeftBottom].r;
-	depthQuad[1] = depthMipmapTex.mips[mmlevel][pixelUpRight].r;
-	depthQuad[2] = depthMipmapTex.mips[mmlevel][pixelUpLeft].r;
-	depthQuad[3] = depthMipmapTex.mips[mmlevel][pixelBottomRight].r;
-
-	// in opengl, more far more less, so if greater, don't cull
-	if (isOpenGL) {
-		for (int i = 0; i < 4; i++) {
-			if (depth > depthQuad[i]) {
-				return false;
-			}
-		}
-	}
-	else { // in dx11, more far more greater, so if less, don't cull
-		for (int i = 0; i < 4; i++) {
-			if (depth < depthQuad[i]) {
-				return false;
-			}
-		}
-	}
-
-	return true;
 }
-
 
 // in general,only use 1D number to declare the dispatch and numthreads
 //  SV_DispatchThreadID is the id in all the threads in dispatch

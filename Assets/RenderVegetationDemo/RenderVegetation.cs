@@ -91,12 +91,12 @@ public class RenderVegetation : MonoBehaviour
 
     private void OnEnable()
     {
-        RenderPipelineManager.beginCameraRendering += GenerateDepthMipMap;
+        RenderPipelineManager.endCameraRendering += GenerateDepthMipMap;
     }
 
     private void OnDisable()
     {
-        RenderPipelineManager.beginCameraRendering -= GenerateDepthMipMap;
+        RenderPipelineManager.endCameraRendering -= GenerateDepthMipMap;
     }
 
 
@@ -126,7 +126,7 @@ public class RenderVegetation : MonoBehaviour
         FrustumHiZCullComputeShader.SetVector("boxExtents", PrefabMeshBounds.extents);
         FrustumHiZCullComputeShader.SetBuffer(FrustumHiZCullingKernelID, "visibleBuffer", OutputVisibleInstancesBuffer);
         FrustumHiZCullComputeShader.SetBool("isOpenGL", Camera.main.projectionMatrix.Equals(GL.GetGPUProjectionMatrix(Camera.main.projectionMatrix, false)));
-        
+        bool isOpenGL = Camera.main.projectionMatrix.Equals(GL.GetGPUProjectionMatrix(Camera.main.projectionMatrix, false));
         //draw indirect instances
         DrawIndirectInstanceBounds.size = Vector3.one * 100000;
 
@@ -163,7 +163,7 @@ public class RenderVegetation : MonoBehaviour
     void Update()
     {
         Shader.SetGlobalTexture("DepthTextureDebug", DepthTexture);
-        if (IsDepthTextureInited && IsRenderCameraChange() )
+        if (IsDepthTextureInited )
         {
 
             //clear
@@ -171,7 +171,8 @@ public class RenderVegetation : MonoBehaviour
             OutputVisibleInstancesBuffer.SetCounterValue(0);
             FrustumHiZCullComputeShader.SetVectorArray("cameraPlanes", GetFrustumPlanes(MainCamera, CameraFrustumPlanes));
             FrustumHiZCullComputeShader.SetBool("showInstanceBounds", showInstanceGPUBounds_Async || showInstanceGPUBounds_GetData);
-            
+            FrustumHiZCullComputeShader.SetVector("cameraForward", MainCamera.transform.forward);
+
             FrustumHiZCullComputeShader.SetTexture(FrustumHiZCullingKernelID, "depthMipmapTex", DepthTexture);
             FrustumHiZCullComputeShader.SetMatrix("cameraVPMatrix", GL.GetGPUProjectionMatrix(MainCamera.projectionMatrix, false) * MainCamera.worldToCameraMatrix);
 

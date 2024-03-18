@@ -6,9 +6,10 @@
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags { "Queue" = "Transparent+1"   }
         LOD 100
-
+        //ZWrite Off 
+        //ZTest On
         Pass
         {
             HLSLPROGRAM

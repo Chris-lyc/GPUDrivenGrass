@@ -37,7 +37,7 @@ Shader "Unlit/DepthTextureShader"
                     depth.y = tex2D(_MainTex, uv + float2(0, offset));
                     depth.z = tex2D(_MainTex, uv + float2(offset, 0));
                     depth.w = tex2D(_MainTex, uv + float2(offset, offset));
-                #if defined(UNITY_REVERSED_Z)
+                #if defined(UNITY_REVERSED_Z) // now we use this, dx11
                     return min(min(depth.x, depth.y), min(depth.z, depth.w));
                 #else
                     return max(max(depth.x, depth.y), max(depth.z, depth.w));
