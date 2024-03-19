@@ -84,7 +84,7 @@ bool IsHiZCulled(in float4 boundVerts[8]) {
 	// ndc [x,y]<->[-1,1] to screen [0,width]x[0,height], actually is (uvLB-uvUP) * curDepthTexSize
 	uint scwidth = max(maxx - minx, maxy - miny) * 0.5f * depthTextureSize;
 	// this is because when we generate the mipmap, the last level's size is > 8,so minus 4
-	uint mmlevel = (uint)clamp(log2(scwidth), 0, log2(depthTextureSize)-4);
+	uint mmlevel = (uint)clamp(log2(scwidth)-1, 0, log2(depthTextureSize)-4);
 	uint curDepthTexSize = depthTextureSize / (1 << mmlevel);
 
 	float depthInMM[4];
@@ -94,7 +94,7 @@ bool IsHiZCulled(in float4 boundVerts[8]) {
 	depthInMM[3] = tex2Dlod(DepthTextureDebug, float4(uvUpRight.x, uvUpRight.y, 0, mmlevel)).r;
 	
 	float depthInMMMin = depthInMM[0];
-	for (int i = 0; i < 4; i++) depthInMMMin = min(depthInMMMin, depthInMM[i]);
+	for (uint i = 0; i < 4; i++) depthInMMMin = min(depthInMMMin, depthInMM[i]);
 
 	if (depthObj < depthInMMMin)
 		return true;

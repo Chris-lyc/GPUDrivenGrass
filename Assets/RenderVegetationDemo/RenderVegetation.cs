@@ -221,6 +221,10 @@ public class RenderVegetation : MonoBehaviour
 
     private void GenerateDepthMipMap(ScriptableRenderContext context, Camera camera)
     {
+        // while use begin/end CameraRendering, all cameras including scene camera will call this function, so 
+        // we need this judge
+        if (camera.name != "Main Camera")
+            return;
         IsDepthTextureInited = true;
         int w = DepthTexture.width;
         int mipmapLevel = 0;
