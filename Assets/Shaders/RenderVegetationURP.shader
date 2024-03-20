@@ -1,4 +1,4 @@
-﻿Shader "Custom/RenderVegetationURP"
+﻿﻿Shader "Custom/RenderVegetationURP"
 {
     Properties
     {
@@ -6,9 +6,10 @@
     }
     SubShader
     {
-        Tags { "RenderType"="Opaque" }
+        Tags { "Queue" = "Transparent+1"   }
         LOD 100
-
+        //ZWrite Off 
+        //ZTest On
         Pass
         {
             HLSLPROGRAM
@@ -17,6 +18,7 @@
 
             #include "UnityCG.cginc"
             #include "UnityInstancing.cginc"
+            
             #pragma multi_compile_instancing
             #include "Assets\Shaders\GPUInstanceIndirect.cginc"
             #pragma instancing_options procedural:setup
@@ -54,4 +56,5 @@
             ENDHLSL
         }
     }
+    FallBack "Diffuse"
 }
