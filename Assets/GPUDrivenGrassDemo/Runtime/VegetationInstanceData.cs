@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace GPUDrivenGrassDemo.Runtime
 {
     [Serializable]
-    public class VegetationInstanceData
+    [StructLayout(LayoutKind.Sequential)]
+    public struct VegetationInstanceData
     {
         /// <summary>
         /// center of bounding box
@@ -17,7 +19,7 @@ namespace GPUDrivenGrassDemo.Runtime
         /// <summary>
         /// transform
         /// </summary>
-        public Matrix4x4 matrix;
+        public Matrix4x4 matrixData;
         /// <summary>
         /// instance id
         /// </summary>

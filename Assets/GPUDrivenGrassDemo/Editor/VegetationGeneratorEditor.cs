@@ -132,7 +132,7 @@ namespace GPUDrivenGrassDemo.Editor
             var bounds = GPUDrivenGrassDemo.Runtime.Tool.GetBounds(go);
 
             var vd = new VegetationInstanceData();
-            vd.matrix = mat;
+            vd.matrixData = mat;
             vd.center = bounds.center;
             vd.extents = bounds.extents;
             vd.InstanceID = NextInstanceID;

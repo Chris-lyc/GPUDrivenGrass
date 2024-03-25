@@ -72,5 +72,5 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
 .idea/
-/Assets/GPUDrivenGrassDemo/100000_GrassDatabase.asset
-/Assets/GPUDrivenGrassDemo/100000_GrassDatabase.asset.meta
+/Assets/GPUDrivenGrassDemo/100000_Grass.asset
+/Assets/GPUDrivenGrassDemo/100000_Grass.asset.meta

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -40,7 +41,8 @@ namespace GPUDrivenGrassDemo.Runtime
         public int InstanceCounts;
         public Vector3Int InstanceExtents = new Vector3Int(500, 500, 500);
         public float RandomMaxScaleValue = 5;
-        private Matrix4x4[] InstancesMatrix;
+        // private Matrix4x4[] InstancesMatrix;
+        private VegetationInstanceData[] InstanceDatas;
         
         // use for hiz
         public static RenderTexture depthRT;
@@ -60,29 +62,10 @@ namespace GPUDrivenGrassDemo.Runtime
 
         public void Start()
         {
-            // // debug  show instance
-            // if (database != null)
-            // {
-            //     // generate vegetation
-            //     foreach (var vegetationInstanceData in database.vegetationInstanceDataList)
-            //     {
-            //         Matrix4x4 transform = vegetationInstanceData.matrix;
-            //         int prefabID = vegetationInstanceData.ModelPrototypeID;
-            //         GameObject go = database.GetPrefabByID(prefabID);
-            //         if (go != null)
-            //         {
-            //             GameObject instance = Instantiate(go);
-            //             instance.transform.SetPositionAndRotation(transform.GetColumn(3), transform.rotation);
-            //             instance.transform.localScale = transform.lossyScale;
-            //         }
-            //     }
-            // }
-            
-            
-            InstanceCounts = database.instanceCount * database.terrainCount;
+            InstanceCounts = database.vegetationInstanceDataList.Count;
             
             //init instances
-            InstancesMatrix = GetInstanceData();
+            InstanceDatas = database.vegetationInstanceDataList.ToArray();
             
             //init prefab
             Prefab = database.GetPrefabByID(database.vegetationInstanceDataList[1].ModelPrototypeID);
@@ -92,10 +75,10 @@ namespace GPUDrivenGrassDemo.Runtime
             PrefabMeshBounds = mr.bounds;
 
             //malloc buffer
-            InputInstancesBuffer = new ComputeBuffer(InstanceCounts, sizeof(float) * 4 * 4);
-            InputInstancesBuffer.SetData(InstancesMatrix);
-            OutputVisibleInstancesBuffer =
-                new ComputeBuffer(InstanceCounts, sizeof(float) * 4 * 4, ComputeBufferType.Append);
+            InputInstancesBuffer = new ComputeBuffer(InstanceCounts, Marshal.SizeOf(new VegetationInstanceData()));
+            InputInstancesBuffer.SetData(InstanceDatas);
+            OutputVisibleInstancesBuffer = new ComputeBuffer(InstanceCounts,
+                Marshal.SizeOf(new VegetationInstanceData()), ComputeBufferType.Append);
             
             //init computeshader
             GPUDrivenCullingComputeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>(
@@ -103,9 +86,8 @@ namespace GPUDrivenGrassDemo.Runtime
             GPUDrivenCullingKernelID = GPUDrivenCullingComputeShader.FindKernel("GPUDrivenCulling");
             GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "instancesBuffer", InputInstancesBuffer);
             GPUDrivenCullingComputeShader.SetInt("instancesCount", InstanceCounts);
-            GPUDrivenCullingComputeShader.SetVector("boxCenter", PrefabMeshBounds.center);
-            GPUDrivenCullingComputeShader.SetVector("boxExtents", PrefabMeshBounds.extents);
-            GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "visibleBuffer", OutputVisibleInstancesBuffer);
+            GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "visibleBuffer",
+                OutputVisibleInstancesBuffer);
 
             GPUDrivenCullingComputeShader.SetInt("depthTextureSize", HzbDepthTexMaker.hzbDepthTextureSize);
 
@@ -222,7 +204,7 @@ namespace GPUDrivenGrassDemo.Runtime
                 // generate vegetation
                 foreach (var vegetationInstanceData in database.vegetationInstanceDataList)
                 {
-                    instances[index++] = vegetationInstanceData.matrix;
+                    instances[index++] = vegetationInstanceData.matrixData;
                 }
             }
 

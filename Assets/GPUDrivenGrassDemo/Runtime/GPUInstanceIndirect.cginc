@@ -1,7 +1,14 @@
 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
 #if defined(SHADER_API_GLCORE) || defined(SHADER_API_D3D11) || defined(SHADER_API_GLES3) || defined(SHADER_API_METAL) || defined(SHADER_API_VULKAN) || defined(SHADER_API_PSSL) || defined(SHADER_API_XBOXONE)
 // this is the data we want to accept in the shader, which is offered by outside
-StructuredBuffer<float4x4> IndirectShaderDataBuffer;
+struct VegetationInstanceData {
+	float3 center;
+	float3 extents;
+	float4x4 matrixData;
+	int InstanceID;
+	int ModelPrototypeID;
+};
+StructuredBuffer<VegetationInstanceData> IndirectShaderDataBuffer;
 #endif	
 #endif
 
@@ -38,7 +45,7 @@ float4x4 inverse(float4x4 input)
 void setup()
 {
 #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-	unity_ObjectToWorld = IndirectShaderDataBuffer[unity_InstanceID];
+	unity_ObjectToWorld = IndirectShaderDataBuffer[unity_InstanceID].matrixData;
 	unity_WorldToObject = inverse(unity_ObjectToWorld);
 #endif
 }
