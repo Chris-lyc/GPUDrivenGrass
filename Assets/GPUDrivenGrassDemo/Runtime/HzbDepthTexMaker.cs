@@ -78,7 +78,7 @@ namespace GPUDrivenGrassDemo.Runtime
             while (h > 8)
             {
                 hzbMat.SetVector(ID_InvSize, new Vector4(1.0f / w, 1.0f / h, 0, 0));
-
+                
                 tempRT = RenderTexture.GetTemporary(w, h, 0, hzbDepth.format);
                 tempRT.filterMode = FilterMode.Point;
                 if (lastRt == null)

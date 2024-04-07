@@ -27,6 +27,6 @@ namespace GPUDrivenGrassDemo.Runtime
         /// <summary>
         /// model id
         /// </summary>
-        public int ModelPrototypeID;    
+        public int ModelPrototypeID;
     }    
 }

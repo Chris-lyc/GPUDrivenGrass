@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEditor;
+using UnityEditorInternal;
 using Random = UnityEngine.Random;
 
 using GPUDrivenGrassDemo.Runtime;
@@ -12,7 +13,11 @@ namespace GPUDrivenGrassDemo.Editor
     public class VegetationGeneratorEditor: EditorWindow
     {
         public static VegetationGeneratorEditor window;
-        public GameObject prefab;
+        public List<GameObject> prefabs = new List<GameObject>();
+        private SerializedObject serObj;
+        private SerializedProperty serPty;
+        private ReorderableList prefabsReorderableList;
+        
         public int instanceCount;
         
         DefaultAsset vegetationDatabaseDirAsset = null;
@@ -30,10 +35,41 @@ namespace GPUDrivenGrassDemo.Editor
             window.minSize = new Vector2(400, 400);
         }
 
+        private void OnEnable()
+        {
+            serObj = new SerializedObject(this);
+            serPty = serObj.FindProperty("prefabs");
+
+            prefabsReorderableList = new ReorderableList(serObj, serPty, true, true, true, true);
+            
+            prefabsReorderableList.drawHeaderCallback = (Rect rect) =>
+            {
+                EditorGUI.LabelField(rect, "Vegetation Prefabs:");
+            };
+            
+            prefabsReorderableList.drawElementCallback = (Rect rect, int index, bool isActive, bool isFocused) =>
+            {
+                var element = prefabsReorderableList.serializedProperty.GetArrayElementAtIndex(index);
+                rect.y += 2;
+                EditorGUI.PropertyField(new Rect(rect.x, rect.y, rect.width, EditorGUIUtility.singleLineHeight), element, GUIContent.none);
+            };
+ 
+            prefabsReorderableList.onAddCallback = (ReorderableList list) =>
+            {
+                var index = list.serializedProperty.arraySize;
+                list.serializedProperty.arraySize++;
+                list.index = index;
+                var element = list.serializedProperty.GetArrayElementAtIndex(index);
+                element.objectReferenceValue = null;
+            };
+        }
+
         public void OnGUI()
         {
-            prefab = EditorGUILayout.ObjectField
-                ("Vegetation Prefab: ", prefab, typeof(GameObject), true) as GameObject;
+            serObj.Update();
+            prefabsReorderableList.DoLayoutList();
+            serObj.ApplyModifiedProperties();
+            
             instanceCount = EditorGUILayout.IntField("Instance count of a chunk: ", instanceCount);
 
             vegetationDatabaseDirAsset = EditorGUILayout.ObjectField("Database path: ", vegetationDatabaseDirAsset,
@@ -51,7 +87,6 @@ namespace GPUDrivenGrassDemo.Editor
 
         public void GenerateVegetation()
         {
-
             if (string.IsNullOrEmpty(vegetationDatabaseDir) ||
                 string.IsNullOrEmpty(rawVegetationDatabaseFilename)) return;
             System.IO.Directory.CreateDirectory(vegetationDatabaseDir);
@@ -86,8 +121,11 @@ namespace GPUDrivenGrassDemo.Editor
                     var x = Random.Range(0, terrain.terrainData.size.x) + terrain.transform.position.x;
                     var z = Random.Range(0, terrain.terrainData.size.z) + terrain.transform.position.z;
                     var pos = new Vector3(x, 0, z);
+
+                    // random select a kind of prefab
+                    int prefabIndex = Random.Range(0, prefabs.Count);
                     
-                    var vd = GetVegetationInstanceData(pos, new Vector2(1f, 1f), prefab, index, terrain);
+                    var vd = GetVegetationInstanceData(pos, new Vector2(1f, 1f), prefabs[prefabIndex], index, terrain);
                     index++;
                     
                     instanceList.Add(vd);
@@ -97,12 +135,13 @@ namespace GPUDrivenGrassDemo.Editor
             // Assign generated instance list to scriptable object
             database.vegetationInstanceDataList = instanceList;
 
-            List<ModelPrototype> modelPrototypes = new List<ModelPrototype>();
+            List<ModelPrototype> modelPrototypeList = new List<ModelPrototype>();
             foreach (var item in modelPrototypeDic)
             {
-                modelPrototypes.Add(new ModelPrototype(item.Key, item.Value));
+                modelPrototypeList.Add(new ModelPrototype(item.Key, item.Value));
             }
-            database.modelPrototypeList = modelPrototypes;
+
+            database.modelPrototypeList = modelPrototypeList;
             
             modelPrototypeDic.Clear();
             
@@ -126,9 +165,7 @@ namespace GPUDrivenGrassDemo.Editor
                 go = prefab;
                 modelPrototypeDic[prefabID] = go;
             }
-            // go.transform.position = p;
-            // go.transform.rotation = r;
-            // go.transform.localScale = s;
+            
             var bounds = GPUDrivenGrassDemo.Runtime.Tool.GetBounds(go);
 
             var vd = new VegetationInstanceData();

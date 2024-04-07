@@ -12,18 +12,36 @@ namespace GPUDrivenGrassDemo.Runtime
         public int instanceCount;
         public List<VegetationInstanceData> vegetationInstanceDataList;
         public List<ModelPrototype> modelPrototypeList;
+        
+        public Dictionary<int, int> modelDic; // <prefabID, index in modelPrototypeList>
+
+        public void OnEnable()
+        {
+            modelDic = new Dictionary<int, int>();
+            for (int i = 0; i < modelPrototypeList.Count; ++i)
+            {
+                modelDic.Add(modelPrototypeList[i].prefabID, i);
+            }
+        }
 
         public GameObject GetPrefabByID(int prefabID)
         {
-            foreach (var modelPrototype in modelPrototypeList)
+            if (modelDic.ContainsKey(prefabID))
             {
-                if (modelPrototype.prefabID == prefabID)
-                {
-                    return modelPrototype.prefabGameObject;
-                }
+                return modelPrototypeList[modelDic[prefabID]].prefabGameObject;
             }
 
             return null;
+            
+            // foreach (var modelPrototype in modelPrototypeList)
+            // {
+            //     if (modelPrototype.prefabID == prefabID)
+            //     {
+            //         return modelPrototype.prefabGameObject;
+            //     }
+            // }
+            //
+            // return null;
         }
     } 
 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using UnityEditor;
 using UnityEngine;
@@ -17,32 +18,22 @@ namespace GPUDrivenGrassDemo.Runtime
         private Vector4[] CameraFrustumPlanes;
         private Vector3 LastCameraPos = Vector3.zero;
         private Quaternion LastCameraRot = Quaternion.identity;
-
-        // prefab
-        private GameObject Prefab;
-        private Mesh PrefabMesh;
-        private Material PrefabMaterial;
-
-        private Bounds PrefabMeshBounds; //use for the prefab's mesh, as the boundCenter and boundExtents to be transfered  
+        
+        // rendering data
+        private RenderingData[] renderingDatas;
 
         //compute shader
         private ComputeShader GPUDrivenCullingComputeShader;
-        private ComputeBuffer InputInstancesBuffer;
-        private ComputeBuffer OutputVisibleInstancesBuffer;
         private int GPUDrivenCullingKernelID;
 
         //drawindirectinstance
         private ComputeBuffer DrawIndirectInstanceArgsBuffer;
         private uint[] DrawIndirectInstanceArgs = new uint[5] { 0, 0, 0, 0, 0 };
         private Bounds DrawIndirectInstanceBounds = new Bounds();
-        private MaterialPropertyBlock DrawIndirectInstanceMPB;
 
         //use for generate instances
-        public int InstanceCounts;
         public Vector3Int InstanceExtents = new Vector3Int(500, 500, 500);
         public float RandomMaxScaleValue = 5;
-        // private Matrix4x4[] InstancesMatrix;
-        private VegetationInstanceData[] InstanceDatas;
         
         // use for hiz
         public static RenderTexture depthRT;
@@ -62,75 +53,34 @@ namespace GPUDrivenGrassDemo.Runtime
 
         public void Start()
         {
-            InstanceCounts = database.vegetationInstanceDataList.Count;
-            
-            //init instances
-            InstanceDatas = database.vegetationInstanceDataList.ToArray();
-            
-            //init prefab
-            Prefab = database.GetPrefabByID(database.vegetationInstanceDataList[1].ModelPrototypeID);
-            PrefabMesh = Prefab.GetComponent<MeshFilter>().sharedMesh;
-            var mr = Prefab.GetComponent<MeshRenderer>();
-            PrefabMaterial = mr.sharedMaterial;
-            PrefabMeshBounds = mr.bounds;
-
-            //malloc buffer
-            InputInstancesBuffer = new ComputeBuffer(InstanceCounts, Marshal.SizeOf(new VegetationInstanceData()));
-            InputInstancesBuffer.SetData(InstanceDatas);
-            OutputVisibleInstancesBuffer = new ComputeBuffer(InstanceCounts,
-                Marshal.SizeOf(new VegetationInstanceData()), ComputeBufferType.Append);
+            initFromDataBase();
             
             //init computeshader
             GPUDrivenCullingComputeShader = AssetDatabase.LoadAssetAtPath<ComputeShader>(
                 "Assets/GPUDrivenGrassDemo/Runtime/GPUDrivenCulling.compute");
             GPUDrivenCullingKernelID = GPUDrivenCullingComputeShader.FindKernel("GPUDrivenCulling");
-            GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "instancesBuffer", InputInstancesBuffer);
-            GPUDrivenCullingComputeShader.SetInt("instancesCount", InstanceCounts);
-            GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "visibleBuffer",
-                OutputVisibleInstancesBuffer);
 
             GPUDrivenCullingComputeShader.SetInt("depthTextureSize", HzbDepthTexMaker.hzbDepthTextureSize);
 
             //draw indirect instances
             DrawIndirectInstanceBounds.size = Vector3.one * 100000;
 
-            DrawIndirectInstanceArgs[0] = PrefabMesh.GetIndexCount(0); // get the index array size of submesh 0
-            DrawIndirectInstanceArgs[1] = 0; // instance count, in our culling case, this arg should be updated after culling
-            DrawIndirectInstanceArgs[2] = PrefabMesh.GetIndexStart(0); // get the start of index array of submesh 0
-            DrawIndirectInstanceArgs[3] = PrefabMesh.GetBaseVertex(0); // get the base vertex index of submesh 0
-            DrawIndirectInstanceArgs[4] = 0; // the start index of instance
-
             DrawIndirectInstanceArgsBuffer =
                 new ComputeBuffer(5, sizeof(uint) * 5, ComputeBufferType.IndirectArguments);
-            DrawIndirectInstanceArgsBuffer.SetData(DrawIndirectInstanceArgs);
-
-            DrawIndirectInstanceMPB = new MaterialPropertyBlock();
-            DrawIndirectInstanceMPB.SetBuffer("IndirectShaderDataBuffer", OutputVisibleInstancesBuffer);
 
             // use for debug
-            InstanceGPUBoundsBuffer =
-                new ComputeBuffer(InstanceCounts, sizeof(float) * 3 * 2, ComputeBufferType.Append);
             InstanceGPUBoundsCount = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.IndirectArguments);
             InstanceGPUBoundsCount.SetData(InstanceGPUBoundsCountArray);
-            GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "GPUBoundsBuffer", InstanceGPUBoundsBuffer);
-
-            InstanceGPUBounds = new GPUBounds[InstanceCounts];
         }
         
         public void Update()
         {
-            // if (IsRenderCameraChange())
-            // {
-            //clear
-            InstanceGPUBoundsBuffer.SetCounterValue(0);
-            OutputVisibleInstancesBuffer.SetCounterValue(0);
-            
             // frustum culling
             GPUDrivenCullingComputeShader.SetVectorArray("cameraPlanes",
                 GetFrustumPlanes(MainCamera, CameraFrustumPlanes));
             GPUDrivenCullingComputeShader.SetBool("showInstanceBounds",
                 showInstanceGPUBounds_Async || showInstanceGPUBounds_GetData);
-            
+                
             // hiz
             if (depthRT != null)
             {
@@ -145,43 +95,107 @@ namespace GPUDrivenGrassDemo.Runtime
             }
 
             GPUDrivenCullingComputeShader.SetVector("cmrDir",MainCamera.transform.forward);
-            // FrustumCullComputeShader.SetFloat("cmrHalfFov",MainCamera.fieldOfView * 0.5f);
             Matrix4x4 vp = GL.GetGPUProjectionMatrix(MainCamera.projectionMatrix, false) * MainCamera.worldToCameraMatrix;
             GPUDrivenCullingComputeShader.SetMatrix("matrix_VP", vp);
-            // FrustumCullComputeShader.SetVector("cmrPos", MainCamera.transform.position);
             
-            //note that the FrustumCullingKernelID's numthreads is(64,1,1)
-            //here we declare 1D number Dispatch, the group's number should be [InstancesCount /64] + 1
-            GPUDrivenCullingComputeShader.Dispatch(GPUDrivenCullingKernelID, (InstanceCounts / 64) + 1, 1, 1);
-            
-            ComputeBuffer.CopyCount(OutputVisibleInstancesBuffer, DrawIndirectInstanceArgsBuffer, sizeof(uint));
-            
-            if (showInstanceGPUBounds_GetData)
+            foreach (var renderingData in renderingDatas)
             {
-                //// first copy count to a buffer
-                ComputeBuffer.CopyCount(InstanceGPUBoundsBuffer, InstanceGPUBoundsCount, 0);
-                //// than use the getdata method to get count , and store in cpu
-                InstanceGPUBoundsCount.GetData(InstanceGPUBoundsCountArray);
-                uint cnt = InstanceGPUBoundsCountArray[0];
-                if (InstanceGPUBounds == null || InstanceGPUBounds.Length != cnt)
+                GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "instancesBuffer",
+                    renderingData.InputInstancesBuffer);
+                GPUDrivenCullingComputeShader.SetInt("instancesCount", renderingData.InstanceCount);
+                GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "visibleBuffer",
+                    renderingData.OutputVisibleInstancesBuffer);
+                
+                DrawIndirectInstanceArgs[0] = renderingData.PrefabMesh.GetIndexCount(0); // get the index array size of submesh 0
+                DrawIndirectInstanceArgs[1] = 0; // instance count, in our culling case, this arg should be updated after culling
+                DrawIndirectInstanceArgs[2] = renderingData.PrefabMesh.GetIndexStart(0); // get the start of index array of submesh 0
+                DrawIndirectInstanceArgs[3] = renderingData.PrefabMesh.GetBaseVertex(0); // get the base vertex index of submesh 0
+                DrawIndirectInstanceArgs[4] = 0; // the start index of instance
+                DrawIndirectInstanceArgsBuffer.SetData(DrawIndirectInstanceArgs);
+                
+                renderingData.DrawIndirectInstanceMPB.SetBuffer("IndirectShaderDataBuffer", renderingData.OutputVisibleInstancesBuffer);
+                
+                // use for debug
+                InstanceGPUBoundsBuffer =
+                    new ComputeBuffer(renderingData.InstanceCount, sizeof(float) * 3 * 2, ComputeBufferType.Append);
+                GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "GPUBoundsBuffer",
+                    InstanceGPUBoundsBuffer);
+                InstanceGPUBounds = new GPUBounds[renderingData.InstanceCount];
+                
+                
+                
+                // if (IsRenderCameraChange())
+                // {
+                //clear
+                InstanceGPUBoundsBuffer.SetCounterValue(0);
+                renderingData.OutputVisibleInstancesBuffer.SetCounterValue(0);
+                
+                //note that the FrustumCullingKernelID's numthreads is(64,1,1)
+                //here we declare 1D number Dispatch, the group's number should be [InstancesCount /64] + 1
+                GPUDrivenCullingComputeShader.Dispatch(GPUDrivenCullingKernelID, (renderingData.InstanceCount / 64) + 1, 1, 1);
+                
+                ComputeBuffer.CopyCount(renderingData.OutputVisibleInstancesBuffer, DrawIndirectInstanceArgsBuffer, sizeof(uint));
+                
+                if (showInstanceGPUBounds_GetData)
                 {
-                    InstanceGPUBounds = new GPUBounds[cnt];
+                    //// first copy count to a buffer
+                    ComputeBuffer.CopyCount(InstanceGPUBoundsBuffer, InstanceGPUBoundsCount, 0);
+                    //// than use the getdata method to get count , and store in cpu
+                    InstanceGPUBoundsCount.GetData(InstanceGPUBoundsCountArray);
+                    uint cnt = InstanceGPUBoundsCountArray[0];
+                    if (InstanceGPUBounds == null || InstanceGPUBounds.Length != cnt)
+                    {
+                        InstanceGPUBounds = new GPUBounds[cnt];
+                    }
+                
+                    //// get data method is synchronized, so it would be slow
+                    InstanceGPUBoundsBuffer.GetData(InstanceGPUBounds);
                 }
-            
-                //// get data method is synchronized, so it would be slow
-                InstanceGPUBoundsBuffer.GetData(InstanceGPUBounds);
-            }
-            // }
 
-            Graphics.DrawMeshInstancedIndirect(
-                PrefabMesh,
-                0,
-                PrefabMaterial,
-                DrawIndirectInstanceBounds,
-                DrawIndirectInstanceArgsBuffer,
-                0,
-                DrawIndirectInstanceMPB
-            );
+                Graphics.DrawMeshInstancedIndirect(
+                    renderingData.PrefabMesh,
+                    0,
+                    renderingData.PrefabMaterial,
+                    DrawIndirectInstanceBounds,
+                    DrawIndirectInstanceArgsBuffer,
+                    0,
+                    renderingData.DrawIndirectInstanceMPB
+                );
+            }
+        }
+
+        private void initFromDataBase()
+        {
+            renderingDatas = new RenderingData[database.modelPrototypeList.Count];
+
+            List<List<VegetationInstanceData>> instanceDataList = new List<List<VegetationInstanceData>>();
+
+            for (int i = 0; i < database.modelPrototypeList.Count; ++i)
+            {
+                instanceDataList.Add(new List<VegetationInstanceData>());
+                renderingDatas[i] = new RenderingData();
+                GameObject prefab = database.GetPrefabByID(database.modelPrototypeList[i].prefabID);
+                renderingDatas[i].Prefab = prefab;
+                renderingDatas[i].PrefabMesh = prefab.GetComponent<MeshFilter>().sharedMesh;
+                var mr = prefab.GetComponent<MeshRenderer>();
+                renderingDatas[i].PrefabMaterial = mr.sharedMaterial;
+                renderingDatas[i].DrawIndirectInstanceMPB = new MaterialPropertyBlock();
+            }
+            
+            foreach (var instanceData in database.vegetationInstanceDataList)
+            {
+                int index = database.modelDic[instanceData.ModelPrototypeID];
+                instanceDataList[index].Add(instanceData);
+            }
+
+            for (int i = 0; i < renderingDatas.Length; ++i)
+            {
+                renderingDatas[i].InstanceCount = instanceDataList[i].Count;
+                renderingDatas[i].InstanceDatas = instanceDataList[i].ToArray();
+                renderingDatas[i].init();
+            }
+            
+            instanceDataList.Clear();
         }
 
         private void OnDrawGizmos()
@@ -233,7 +247,7 @@ namespace GPUDrivenGrassDemo.Runtime
             return instances;
         }
         
-        public bool IsRenderCameraChange()
+        private bool IsRenderCameraChange()
         {
             if (LastCameraPos != MainCamera.transform.position ||
                 LastCameraRot != MainCamera.transform.rotation)
@@ -294,8 +308,8 @@ namespace GPUDrivenGrassDemo.Runtime
         private void OnDestroy()
         {
             DrawIndirectInstanceArgsBuffer?.Release();
-            InputInstancesBuffer?.Release();
-            OutputVisibleInstancesBuffer?.Release();
+            // InputInstancesBuffer?.Release();
+            // OutputVisibleInstancesBuffer?.Release();
 
             InstanceGPUBoundsBuffer?.Release();
             InstanceGPUBoundsCount?.Release();
