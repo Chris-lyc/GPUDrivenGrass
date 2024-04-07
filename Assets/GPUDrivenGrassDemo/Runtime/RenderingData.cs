@@ -19,12 +19,18 @@ namespace GPUDrivenGrassDemo.Runtime
         public int InstanceCount;
         public VegetationInstanceData[] InstanceDatas;
         
-        public void init()
+        public void Init()
         {
             InputInstancesBuffer = new ComputeBuffer(InstanceCount, Marshal.SizeOf(new VegetationInstanceData()));
             InputInstancesBuffer.SetData(InstanceDatas);
             OutputVisibleInstancesBuffer = new ComputeBuffer(InstanceCount,
                 Marshal.SizeOf(new VegetationInstanceData()), ComputeBufferType.Append);
+        }
+
+        public void Clear()
+        {
+            InputInstancesBuffer?.Release();
+            OutputVisibleInstancesBuffer?.Release();
         }
     }
 }

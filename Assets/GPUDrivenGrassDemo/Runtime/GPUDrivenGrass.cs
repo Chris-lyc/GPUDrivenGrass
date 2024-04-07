@@ -192,7 +192,7 @@ namespace GPUDrivenGrassDemo.Runtime
             {
                 renderingDatas[i].InstanceCount = instanceDataList[i].Count;
                 renderingDatas[i].InstanceDatas = instanceDataList[i].ToArray();
-                renderingDatas[i].init();
+                renderingDatas[i].Init();
             }
             
             instanceDataList.Clear();
@@ -308,11 +308,12 @@ namespace GPUDrivenGrassDemo.Runtime
         private void OnDestroy()
         {
             DrawIndirectInstanceArgsBuffer?.Release();
-            // InputInstancesBuffer?.Release();
-            // OutputVisibleInstancesBuffer?.Release();
-
             InstanceGPUBoundsBuffer?.Release();
             InstanceGPUBoundsCount?.Release();
+            foreach (var renderingData in renderingDatas)
+            {
+                renderingData.Clear();;
+            }
         }
     }
 }
