@@ -2103,9 +2103,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f26ca2335a414cc28cc7a4d6e00f037c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  database: {fileID: 11400000, guid: 72734c261a7a2d74b97828cae07f3e9a, type: 2}
+  database: {fileID: 11400000, guid: f557f62266affcb46a8e03d4c781f8cf, type: 2}
   MainCamera: {fileID: 1942787804}
-  InstanceCounts: 0
   InstanceExtents: {x: 500, y: 500, z: 500}
   RandomMaxScaleValue: 5
   showInstanceGPUBounds_GetData: 0

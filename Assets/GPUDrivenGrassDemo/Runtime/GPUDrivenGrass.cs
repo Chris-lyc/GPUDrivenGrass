@@ -30,21 +30,11 @@ namespace GPUDrivenGrassDemo.Runtime
         private ComputeBuffer DrawIndirectInstanceArgsBuffer;
         private uint[] DrawIndirectInstanceArgs = new uint[5] { 0, 0, 0, 0, 0 };
         private Bounds DrawIndirectInstanceBounds = new Bounds();
-
-        //use for generate instances
-        public Vector3Int InstanceExtents = new Vector3Int(500, 500, 500);
-        public float RandomMaxScaleValue = 5;
         
         // use for hiz
         public static RenderTexture depthRT;
 
         //use for debug
-        private ComputeBuffer InstanceGPUBoundsBuffer; // use for bounding gpu buffer
-        private ComputeBuffer InstanceGPUBoundsCount;
-
-        private uint[] InstanceGPUBoundsCountArray = new uint[1] { 0 }; // use for store the data in cpu
-        private GPUBounds[] InstanceGPUBounds;
-
         [Header("Debug : show Instance GPUBounds by GetData")]
         public bool showInstanceGPUBounds_GetData;
 
@@ -67,10 +57,6 @@ namespace GPUDrivenGrassDemo.Runtime
 
             DrawIndirectInstanceArgsBuffer =
                 new ComputeBuffer(5, sizeof(uint) * 5, ComputeBufferType.IndirectArguments);
-
-            // use for debug
-            InstanceGPUBoundsCount = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.IndirectArguments);
-            InstanceGPUBoundsCount.SetData(InstanceGPUBoundsCountArray);
         }
         
         public void Update()
@@ -116,18 +102,14 @@ namespace GPUDrivenGrassDemo.Runtime
                 renderingData.DrawIndirectInstanceMPB.SetBuffer("IndirectShaderDataBuffer", renderingData.OutputVisibleInstancesBuffer);
                 
                 // use for debug
-                InstanceGPUBoundsBuffer =
-                    new ComputeBuffer(renderingData.InstanceCount, sizeof(float) * 3 * 2, ComputeBufferType.Append);
                 GPUDrivenCullingComputeShader.SetBuffer(GPUDrivenCullingKernelID, "GPUBoundsBuffer",
-                    InstanceGPUBoundsBuffer);
-                InstanceGPUBounds = new GPUBounds[renderingData.InstanceCount];
-                
+                    renderingData.InstanceGPUBoundsBuffer);
                 
                 
                 // if (IsRenderCameraChange())
                 // {
                 //clear
-                InstanceGPUBoundsBuffer.SetCounterValue(0);
+                renderingData.InstanceGPUBoundsBuffer.SetCounterValue(0);
                 renderingData.OutputVisibleInstancesBuffer.SetCounterValue(0);
                 
                 //note that the FrustumCullingKernelID's numthreads is(64,1,1)
@@ -139,17 +121,17 @@ namespace GPUDrivenGrassDemo.Runtime
                 if (showInstanceGPUBounds_GetData)
                 {
                     //// first copy count to a buffer
-                    ComputeBuffer.CopyCount(InstanceGPUBoundsBuffer, InstanceGPUBoundsCount, 0);
+                    ComputeBuffer.CopyCount(renderingData.InstanceGPUBoundsBuffer, renderingData.InstanceGPUBoundsCount, 0);
                     //// than use the getdata method to get count , and store in cpu
-                    InstanceGPUBoundsCount.GetData(InstanceGPUBoundsCountArray);
-                    uint cnt = InstanceGPUBoundsCountArray[0];
-                    if (InstanceGPUBounds == null || InstanceGPUBounds.Length != cnt)
+                    renderingData.InstanceGPUBoundsCount.GetData(renderingData.InstanceGPUBoundsCountArray);
+                    uint cnt = renderingData.InstanceGPUBoundsCountArray[0];
+                    if (renderingData.InstanceGPUBounds == null || renderingData.InstanceGPUBounds.Length != cnt)
                     {
-                        InstanceGPUBounds = new GPUBounds[cnt];
+                        renderingData.InstanceGPUBounds = new GPUBounds[cnt];
                     }
                 
                     //// get data method is synchronized, so it would be slow
-                    InstanceGPUBoundsBuffer.GetData(InstanceGPUBounds);
+                    renderingData.InstanceGPUBoundsBuffer.GetData(renderingData.InstanceGPUBounds);
                 }
 
                 Graphics.DrawMeshInstancedIndirect(
@@ -201,50 +183,16 @@ namespace GPUDrivenGrassDemo.Runtime
         private void OnDrawGizmos()
         {
             Gizmos.color = Color.red;
-            for (int i = 0; InstanceGPUBounds != null && i < InstanceGPUBoundsCountArray[0]; i++)
+            if (renderingDatas == null) return;
+            foreach (var renderingData in renderingDatas)
             {
-                if (i >= InstanceGPUBounds.Length) break;
-                var ggbox = InstanceGPUBounds[i];
-                Gizmos.DrawWireCube((ggbox.max + ggbox.min) / 2f, ggbox.max - ggbox.min);
-            }
-        }
-
-        private Matrix4x4[] GetInstanceData()
-        {
-            var instances = new Matrix4x4[database.vegetationInstanceDataList.Count];
-            if (database != null)
-            {
-                int index = 0;
-                // generate vegetation
-                foreach (var vegetationInstanceData in database.vegetationInstanceDataList)
+                for (int i = 0; renderingData.InstanceGPUBounds != null && i < renderingData.InstanceGPUBoundsCountArray[0]; i++)
                 {
-                    instances[index++] = vegetationInstanceData.matrixData;
+                    if (i >= renderingData.InstanceGPUBounds.Length) break;
+                    var ggbox = renderingData.InstanceGPUBounds[i];
+                    Gizmos.DrawWireCube((ggbox.max + ggbox.min) / 2f, ggbox.max - ggbox.min);
                 }
             }
-
-            return instances;
-        }
-        
-        private Matrix4x4[] RandomGenerateInstances(int instanceCount, Vector3Int instanceExtents, float maxScale)
-        {
-            var instances = new Matrix4x4[instanceCount];
-            var cameraPos = MainCamera.transform.position;
-
-            for (var i = 0; i < instanceCount; i++)
-            {
-                var pos = new Vector3(
-                    cameraPos.x + Random.Range(-instanceExtents.x, instanceExtents.x),
-                    cameraPos.y + Random.Range(-instanceExtents.y, instanceExtents.y),
-                    cameraPos.z + Random.Range(-instanceExtents.z, instanceExtents.z)
-                );
-                var rot = Quaternion.Euler(Random.Range(0, 180), Random.Range(0, 180), Random.Range(0, 180));
-                var scl = new Vector3(Random.Range(0.1f, maxScale), Random.Range(0.1f, maxScale),
-                    Random.Range(0.1f, maxScale));
-
-                instances[i] = Matrix4x4.TRS(pos, rot, scl);
-            }
-
-            return instances;
         }
         
         private bool IsRenderCameraChange()
@@ -308,8 +256,6 @@ namespace GPUDrivenGrassDemo.Runtime
         private void OnDestroy()
         {
             DrawIndirectInstanceArgsBuffer?.Release();
-            InstanceGPUBoundsBuffer?.Release();
-            InstanceGPUBoundsCount?.Release();
             foreach (var renderingData in renderingDatas)
             {
                 renderingData.Clear();;

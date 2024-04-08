@@ -16,6 +16,12 @@ namespace GPUDrivenGrassDemo.Runtime
         public ComputeBuffer InputInstancesBuffer;
         public ComputeBuffer OutputVisibleInstancesBuffer;
         
+        // use for debug
+        public ComputeBuffer InstanceGPUBoundsBuffer; // use for bounding gpu buffer
+        public ComputeBuffer InstanceGPUBoundsCount;
+        public uint[] InstanceGPUBoundsCountArray = new uint[1] { 0 }; // use for store the data in cpu
+        public GPUBounds[] InstanceGPUBounds;
+        
         public int InstanceCount;
         public VegetationInstanceData[] InstanceDatas;
         
@@ -25,12 +31,21 @@ namespace GPUDrivenGrassDemo.Runtime
             InputInstancesBuffer.SetData(InstanceDatas);
             OutputVisibleInstancesBuffer = new ComputeBuffer(InstanceCount,
                 Marshal.SizeOf(new VegetationInstanceData()), ComputeBufferType.Append);
+            
+            InstanceGPUBoundsCount = new ComputeBuffer(1, sizeof(uint), ComputeBufferType.IndirectArguments);
+            InstanceGPUBoundsCount.SetData(InstanceGPUBoundsCountArray);
+            InstanceGPUBoundsBuffer =
+                new ComputeBuffer(InstanceCount, sizeof(float) * 3 * 2, ComputeBufferType.Append);
+            InstanceGPUBounds = new GPUBounds[InstanceCount];
         }
 
         public void Clear()
         {
             InputInstancesBuffer?.Release();
             OutputVisibleInstancesBuffer?.Release();
+            
+            InstanceGPUBoundsBuffer?.Release();
+            InstanceGPUBoundsCount?.Release();
         }
     }
 }
